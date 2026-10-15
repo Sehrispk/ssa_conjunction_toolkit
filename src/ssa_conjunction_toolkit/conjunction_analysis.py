@@ -15,6 +15,7 @@ from .propagation import (
 )
 from sgp4.api import Satrec, SatrecArray
 from sgp4.conveniences import jday
+from .util import TEME_2_RTN, DATETIMES_2_JULIANS, JULIANS_2_DATETIMES
 
 
 def L_distance_sum(julian_date_array : np.ndarray, primary_satrec: Satrec, secondary_satrec: Satrec, primary_space_object : SpaceObject, secondary_space_object : SpaceObject, target_distance : float = 0) -> float:
@@ -40,6 +41,24 @@ def _find_distance_minima_in_ephemeris(rp : np.ndarray, rs : np.ndarray):
 
     return minimas
 
+def _flatten_julian_dates(jds, jfrs):
+    jd_flat = []
+    for i in range(len(jds)):
+        jd_flat.append(jds[i])
+        jd_flat.append(jfrs[i])
+    return jd_flat
+
+def _boundaries(start_dates, end_dates):
+    start_jds, start_jfrs = DATETIMES_2_JULIANS(start_dates)
+    end_jds, end_jfrs = DATETIMES_2_JULIANS(end_dates)
+
+    start_flat = _flatten_julian_dates(start_jds, start_jfrs)
+    end_flat  = _flatten_julian_dates(end_jds, end_jfrs)
+
+    boundaries = [[start_flat[i], end_flat[i]] for i in range(len(start_flat))]
+
+    return np.array(boundaries)
+
 def linear_distance_minimum_estimate(rp : np.ndarray, rs : np.ndarray, dates: np.ndarray[datetime]) -> tuple[np.ndarray,np.ndarray]:
     """
         estimates the minima of the distance between a primary objects and a set of secondary objects from the ephimeris positions of the objects and a linear model.
@@ -63,9 +82,9 @@ def linear_distance_minimum_estimate(rp : np.ndarray, rs : np.ndarray, dates: np
         d1 = delta_r[i, minima-1, :]  # (N_minima, 3) [km]
         d2 = delta_r[i, minima+1, :] # (N_minima, 3) [km]
         delta_d = d2 - d1 # (N_minima, 3) [km]
-        delta_t_min = - np.einsum('jk,jk->j', d1, delta_d) / np.linalg.norm(delta_d, axis=1)**2 * dt  # (N_minima,) [s]
+        delta_t_min = - np.einsum('jk,jk->j', d1, delta_d) / np.linalg.norm(delta_d, axis=1)**2 * (2*dt)  # (N_minima,) [s]
         t_min = [dates[minima[i]]+timedelta(seconds=delta_t_min[i]) for i in range(len(minima))] # (N_minima,) [datetime]
-        d_min = np.linalg.norm(d1 + delta_d * np.broadcast_to(delta_t_min[...,None], (delta_t_min.shape[0], 3))/dt, axis=1) # (N_minima,) [km]
+        d_min = np.linalg.norm(d1 + delta_d * np.broadcast_to(delta_t_min[...,None], (delta_t_min.shape[0], 3))/(2*dt), axis=1) # (N_minima,) [km]
         
         t_mins.append(np.array(t_min))
         d_mins.append(np.array(d_min))
@@ -90,13 +109,9 @@ def sgp4_distance_minimum_solver(rp : np.ndarray, rs : np.ndarray, dates: np.nda
     d_mins = []
     for secondary_satrec, secondary_space_object, minima in zip(secondary_satrecs, secondary_space_objects, minimas):
         # calculate time bounds for the solver
-        minima_jds = [jday(*dates[m].timetuple()[:6]) for m in minima] # found minimas in julian format
-        minima_jds = np.array([minima_jds[i][j] for i in range(len(minima_jds)) for j in [0,1]]) # flatten (2*N_minima,)
-        lower_bound = [jday(*dates[minima-1][i].timetuple()[:6]) for i in range(len(minima))] # collect lower bounds
-        lower_bound = np.array([lower_bound[i][j] for i in range(len(minima)) for j in [0,1]]) #flatten (2*N_minima,)
-        upper_bound = [jday(*dates[minima+1][i].timetuple()[:6]) for i in range(len(minima))] # collect upper bounds
-        upper_bound = np.array([upper_bound[i][j] for i in range(len(minima)) for j in [0,1]]) #flatten (2*N_minima,)
-        bounds = [[lower_bound[i], upper_bound[i]] for i in range(len(minima_jds))]
+        minima_jds = _flatten_julian_dates(*DATETIMES_2_JULIANS(dates[minima]))
+        bounds = _boundaries(dates[minima-1], dates[minima+1])
+
 
         # define loss function to be optimized (closure over satrecs)
         loss_function = lambda julian_date_array, secondary_satrec=secondary_satrec, secondary_space_object=secondary_space_object: L_distance_sum(julian_date_array, primary_satrec=primary_satrec, secondary_satrec=secondary_satrec, primary_space_object=primary_space_object, secondary_space_object=secondary_space_object)
@@ -106,8 +121,7 @@ def sgp4_distance_minimum_solver(rp : np.ndarray, rs : np.ndarray, dates: np.nda
 
         # recover dates of distance minimum
         t_min = []
-        for jd, jfr in zip(result.x[0::2], result.x[1::2]):
-            t_min.append(datetime(*juliandate.to_gregorian(jd+jfr), tzinfo=timezone.utc))        
+        t_min = JULIANS_2_DATETIMES(result.x[0::2], result.x[1::2])    
         d_min = propagate_distance(result.x[0::2], result.x[1::2], primary_satrec, secondary_satrec, primary_space_object, secondary_space_object)
 
         t_mins.append(np.array(t_min))
@@ -133,38 +147,6 @@ def screen_for_close_approach(t_mins:list[np.ndarray[datetime]], d_mins:list[np.
 
     return t_cas, d_cas
 
-def TEME_2_RTN(rp, vp, rs, vs):
-    """
-        Transforms positions rs and velocities vs of object into the RTN reference frame defined/anchored by the primary objects positions rp and velocities vp
-        The transformation is anchored to rp, so each time point receives a new transformation matrix
-        rp: (N_dates, 3)
-        vp: (N_dates, 3)
-        rs: (N_dates,3)
-        vs: (N_dates,3)
-
-        r_rtn: (N_dates,3)
-        v_rtn: (N_dates,3)
-    """
-
-    N_dates = rp.shape[0]
-
-    # calculate transforamtion matrix to RTN based on rp and vp
-    e_r = rp/np.broadcast_to(np.linalg.norm(rp[...,None], axis=1), shape=(N_dates,3))
-    h = np.cross(rp, vp, axisa=1, axisb=1)
-    e_n = h / np.broadcast_to(np.linalg.norm(h[...,None], axis=1), shape=(N_dates,3))
-    e_t = np.cross(e_n,e_r, axisa=1, axisb=1)
-    M_rtn = np.transpose(np.array((e_r,e_t,e_n)), axes=(1,0,2))
-
-    # calculate non-intertial frame effekt (scheinkraft) for velocity transform 
-    omega = np.zeros_like(rp)
-    omega[:,2] = np.linalg.norm(h, axis=1) / np.linalg.norm(rp, axis=1)**2
-
-    # transform positions and veloccities
-    r_rtn = np.einsum("tev,tv->te", M_rtn, (rs - rp))
-    v_rtn = np.einsum("tev,tv->te", M_rtn, (vs - vp)) - np.cross(omega, r_rtn, axisa=1, axisb=1)
-
-    return r_rtn, v_rtn
-
 def find_conjunction_track(dates_mins, d_mins, radius, primary_satrec, secondary_satrec, primary_space_object, secondary_space_object):
     """
     dates_mins: (N_ca, ) datetime
@@ -174,7 +156,7 @@ def find_conjunction_track(dates_mins, d_mins, radius, primary_satrec, secondary
     find entry and exit points of secondary object into screening volume. Then generate trajectory from entry to exit and convert ro rtn
     """
 
-    julian_dates, julian_dates_fractions = ([jday(*dates_mins[j].timetuple()[:6])[0] for j in range(len(dates_mins))], [jday(*dates_mins[j].timetuple()[:6])[1] for j in range(len(dates_mins))]) #(N_ca) jul_date
+    julian_dates, julian_dates_fractions = DATETIMES_2_JULIANS(dates_mins) #(N_ca) jul_date
     rp, vp = propagate_satrec(satrec=primary_satrec,  julian_dates=julian_dates, julian_date_fractions=julian_dates_fractions, space_object = primary_space_object) # (N_ca, 3) # [km] [km/s]
     rs, vs = propagate_satrec(satrec=secondary_satrec,  julian_dates=julian_dates, julian_date_fractions=julian_dates_fractions, space_object = secondary_space_object) # (N_ca, 3) # [km] [km/s]
 
@@ -191,42 +173,21 @@ def find_conjunction_track(dates_mins, d_mins, radius, primary_satrec, secondary
     date_entry = np.array([dates_mins[i] + timedelta(seconds=t_entry[i]) for i in range(len(t_entry))]) # (N_ca, ) datetime
     date_exit = np.array([dates_mins[i] + timedelta(seconds=t_exit[i]) for i in range(len(t_exit))]) # (N_ca, ) datetime
 
-    julian_date_entry = [jday(*date_entry[m].timetuple()[:6]) for m in range(len(date_entry))] # (N_ca, 2)
-    julian_date_entry = np.array([julian_date_entry[i][j] for i in range(len(julian_date_entry)) for j in [0,1]]) # flatten (2*N_ca,)
-    julian_date_exit = [jday(*date_exit[m].timetuple()[:6]) for m in range(len(date_exit))] # (N_ca, 2)
-    julian_date_exit = np.array([julian_date_exit[i][j] for i in range(len(julian_date_exit)) for j in [0,1]]) # flatten (2*N_ca,)
-
-    lower_bound_entry = [jday(*(date_entry[i]-timedelta(seconds=2)).timetuple()[:6]) for i in range(len(date_entry))] # collect lower bounds
-    lower_bound_entry = np.array([lower_bound_entry[i][j] for i in range(len(lower_bound_entry)) for j in [0,1]]) #flatten (2*N_ca,)
-    upper_bound_entry = [jday(*dates_mins[i].timetuple()[:6]) for i in range(len(dates_mins))] # collect upper bounds
-    upper_bound_entry = np.array([upper_bound_entry[i][j] for i in range(len(upper_bound_entry)) for j in [0,1]]) #flatten (2*N_ca,)
-    bounds_entry = [[lower_bound_entry[i], upper_bound_entry[i]] for i in range(len(julian_date_entry))]
-
-    upper_bound_exit = [jday(*(date_exit[i]+timedelta(seconds=2)).timetuple()[:6]) for i in range(len(date_exit))] # collect upper bounds
-    upper_bound_exit = np.array([upper_bound_exit[i][j] for i in range(len(upper_bound_exit)) for j in [0,1]]) #flatten (2*N_ca,)
-    lower_bound_exit = [jday(*dates_mins[i].timetuple()[:6]) for i in range(len(dates_mins))] # collect lower bounds
-    lower_bound_exit = np.array([lower_bound_exit[i][j] for i in range(len(lower_bound_exit)) for j in [0,1]]) #flatten (2*N_ca,)
-    bounds_exit = [[lower_bound_exit[i], upper_bound_exit[i]] for i in range(len(julian_date_exit))]
+    julian_date_entry = _flatten_julian_dates(*DATETIMES_2_JULIANS(date_entry))
+    julian_date_exit = _flatten_julian_dates(*DATETIMES_2_JULIANS(date_exit))
+    bounds_entry = _boundaries(date_entry, dates_mins)
+    bounds_exit = _boundaries(dates_mins, date_exit)
 
     # solve sgp4 for entry and exit points with t_entry and t_exit as initial guess for solver
     loss_function = lambda julian_date_array, secondary_satrec=secondary_satrec, secondary_space_object=secondary_space_object: L_distance_sum(julian_date_array, primary_satrec=primary_satrec, secondary_satrec=secondary_satrec, primary_space_object=primary_space_object, secondary_space_object=secondary_space_object, target_distance=radius)
     result_entry = scipy.optimize.minimize(loss_function, julian_date_entry, bounds=bounds_entry)
     result_exit = scipy.optimize.minimize(loss_function, julian_date_exit, bounds=bounds_exit)
 
-
-    print(result_entry)
-    print(result_exit)
     t_entry = []
-    for jd, jfr in zip(result_entry.x[0::2], result_entry.x[1::2]):
-        t_entry.append(datetime(*juliandate.to_gregorian(jd+jfr), tzinfo=timezone.utc))        
+    t_entry = JULIANS_2_DATETIMES(result_entry.x[0::2], result_entry.x[1::2])     
     d_entry = propagate_distance(result_entry.x[0::2], result_entry.x[1::2], primary_satrec, secondary_satrec, primary_space_object, secondary_space_object)
-    t_exit = []
-    for jd, jfr in zip(result_exit.x[0::2], result_exit.x[1::2]):
-        t_exit.append(datetime(*juliandate.to_gregorian(jd+jfr), tzinfo=timezone.utc))        
+    t_exit = JULIANS_2_DATETIMES(result_exit.x[0::2], result_exit.x[1::2])     
     d_exit = propagate_distance(result_exit.x[0::2], result_exit.x[1::2], primary_satrec, secondary_satrec, primary_space_object, secondary_space_object)
-
-    print(d_entry)
-    print(d_exit)
 
     # generate trajectory between entry and exit
     conjunction_tracks = []
@@ -234,7 +195,6 @@ def find_conjunction_track(dates_mins, d_mins, radius, primary_satrec, secondary
         r_track_p, v_track_p, track_dates_p = generate_ephemeris(satrecs=primary_satrec, space_object=primary_space_object, start_date=start, end_date=end, N_dates = 50)
         r_track_s, v_track_s, track_dates_s = generate_ephemeris(satrecs=secondary_satrec, space_object=secondary_space_object, start_date=start, end_date=end, N_dates = 50)
         rs_rtn, vs_rtn = TEME_2_RTN(r_track_p, v_track_p, r_track_s, v_track_s)
-        print(np.linalg.norm(rs_rtn, axis=1))
         conjunction_tracks.append(rs_rtn)
 
     return t_entry, t_exit, conjunction_tracks

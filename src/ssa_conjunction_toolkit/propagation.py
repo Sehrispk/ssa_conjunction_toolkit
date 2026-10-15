@@ -6,6 +6,7 @@ from sgp4.api import SGP4_ERRORS, Satrec, SatrecArray, jday
 from sgp4.conveniences import dump_satrec
 
 from .data_classes import SpaceObject
+from .util import DATETIMES_2_JULIANS
 
 
 def _validate_jd(julian_dates : np.ndarray, julian_date_fractions: np.ndarray):
@@ -29,16 +30,7 @@ def _gen_date_range(start_date: datetime, end_date: datetime, N_dates: int) -> t
     dates = np.array([start_date + (end_date - start_date) * t for t in np.linspace(0,1,N_dates)])
     jds = []
     jfrs = []
-    for date in dates:
-        jd, jfr = jday(
-            date.year,
-            date.month,
-            date.day,
-            date.hour,
-            date.minute,
-            date.second + date.microsecond / 1e6)
-        jds.append(jd)
-        jfrs.append(jfr)
+    jds, jfrs = DATETIMES_2_JULIANS(dates)
     return np.array(jds), np.array(jfrs), dates # (N_dates,) [float, float, datetime]
 
 def propagate_satrecs(satrecs : SatrecArray, julian_dates : np.ndarray, julian_date_fractions: np.ndarray, space_objects : list[SpaceObject]) -> tuple[np.ndarray, np.ndarray]:
@@ -110,8 +102,8 @@ if __name__ == "__main__":
     print(r.shape)
     print(v.shape)
 
-    from .util import TEME_2_ICRF
-    r,v = TEME_2_ICRF(r,v,d)
+    from .util import TEME_2_GCRS
+    r,v = TEME_2_GCRS(r,v,d)
 
     import czml3
 

@@ -5,7 +5,7 @@ from .propagation import generate_ephemeris_array
 import datetime
 from datetime import timezone
 from sgp4.api import SatrecArray
-from .util import TEME_2_ICRF, generate_czml_trajectory_packets
+from .util import TEME_2_GCRS, generate_czml_trajectory_packets
 import czml3
 import requests
 
@@ -63,7 +63,7 @@ def call_propagate():
     rs, vs, d = generate_ephemeris_array(
         SatrecArray(satrecs), space_objects, start, end, samples
     )
-    rs, vs = TEME_2_ICRF(rs, vs, d)
+    rs, vs = TEME_2_GCRS(rs, vs, d)
     packets = generate_czml_trajectory_packets(rs, vs, d, space_objects)
     preamble = czml3.Packet(id="document", name="Satellite trajectories", version="1.0")
     doc = czml3.Document(packets=[preamble, *packets])
