@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ssa_conjunction_toolkit"              
+version = "0.9.0"
+description = "srfg"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy", "sgp4", "czml3", "astropy", "matplotlib", "juliandate", "scipy", "flatbuffers", "spacedatastandards.org", "flask"]
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[[tool.mypy.overrides]]
+module = ["sgp4", "sgp4.*"]
+ignore_missing_imports = true

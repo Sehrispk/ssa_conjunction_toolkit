@@ -1,9 +1,12 @@
-import numpy as np
-from data_classes import SpaceObject
-from sgp4.api import SGP4_ERRORS, SatrecArray, jday, Satrec
-from sgp4.conveniences import dump_satrec
+from datetime import datetime, timedelta, timezone
 from sys import stdout
-from datetime import timezone, timedelta, datetime
+
+import numpy as np
+from sgp4.api import SGP4_ERRORS, Satrec, SatrecArray, jday
+from sgp4.conveniences import dump_satrec
+
+from .data_classes import SpaceObject
+
 
 def _validate_jd(julian_dates : np.ndarray, julian_date_fractions: np.ndarray):
     julian_dates = np.array(julian_dates)
@@ -82,7 +85,7 @@ def generate_ephemeris(satrecs : Satrec, space_object: SpaceObject, start_date: 
     return r, v, dates # d: (N_dates), r,v: (N_dates,3)
 
 if __name__ == "__main__":
-    from orbit_data_query import query
+    from .orbit_data_query import query
 
     space_objects, satrecs = query("STATIONS", query_type="GROUP")
 
@@ -107,7 +110,7 @@ if __name__ == "__main__":
     print(r.shape)
     print(v.shape)
 
-    from util import TEME_2_ICRF
+    from .util import TEME_2_ICRF
     r,v = TEME_2_ICRF(r,v,d)
 
     import czml3

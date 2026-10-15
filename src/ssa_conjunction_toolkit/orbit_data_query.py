@@ -7,7 +7,7 @@ from sgp4 import omm
 from sgp4.api import Satrec, SatrecArray
 
 import requests
-from data_classes import *
+from .data_classes import MeanElements, OrbitData, SpaceObject, TLEParameters
 import os
 import time
 

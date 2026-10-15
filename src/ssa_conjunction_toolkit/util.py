@@ -1,5 +1,6 @@
-import czml3
 from html import escape
+
+import czml3
 import numpy as np
 from astropy import coordinates as coord
 from astropy import units as u

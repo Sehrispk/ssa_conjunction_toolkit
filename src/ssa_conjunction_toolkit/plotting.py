@@ -299,9 +299,9 @@ if __name__ == "__main__":
 
     from sgp4.api import SGP4_ERRORS, SatrecArray, jday
 
-    from data_classes import MeanElements
-    from orbit_data_query import query
-    from propagation import generate_ephemeris_array
+    from .data_classes import MeanElements
+    from .orbit_data_query import query
+    from .propagation import generate_ephemeris_array
 
     # Uses real CelesTrak OMM data, reusing the query cache when available.
     # ISS is the primary; China's Tianhe station is the secondary.

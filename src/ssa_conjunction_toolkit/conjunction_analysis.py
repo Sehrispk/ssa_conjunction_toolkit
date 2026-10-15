@@ -4,16 +4,16 @@ import juliandate
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy
-from CDM.CDM import CDMT
-from data_classes import *
-from orbit_data_query import query
-from propagation import (
+from .CDM.CDM import CDMT
+from .data_classes import SpaceObject
+from .orbit_data_query import query
+from .propagation import (
     generate_ephemeris,
     generate_ephemeris_array,
     propagate_distance,
     propagate_satrec,
 )
-from sgp4.api import SatrecArray
+from sgp4.api import Satrec, SatrecArray
 from sgp4.conveniences import jday
 
 
@@ -218,11 +218,11 @@ def find_conjunction_track(dates_mins, d_mins, radius, primary_satrec, secondary
     print(result_exit)
     t_entry = []
     for jd, jfr in zip(result_entry.x[0::2], result_entry.x[1::2]):
-        t_entry.append(datetime.datetime(*juliandate.to_gregorian(jd+jfr), tzinfo=timezone.utc))        
+        t_entry.append(datetime(*juliandate.to_gregorian(jd+jfr), tzinfo=timezone.utc))        
     d_entry = propagate_distance(result_entry.x[0::2], result_entry.x[1::2], primary_satrec, secondary_satrec, primary_space_object, secondary_space_object)
     t_exit = []
     for jd, jfr in zip(result_exit.x[0::2], result_exit.x[1::2]):
-        t_exit.append(datetime.datetime(*juliandate.to_gregorian(jd+jfr), tzinfo=timezone.utc))        
+        t_exit.append(datetime(*juliandate.to_gregorian(jd+jfr), tzinfo=timezone.utc))        
     d_exit = propagate_distance(result_exit.x[0::2], result_exit.x[1::2], primary_satrec, secondary_satrec, primary_space_object, secondary_space_object)
 
     print(d_entry)
@@ -342,7 +342,7 @@ if __name__ == "__main__":
             secondary_space_objects.remove(so)
 
 
-    cdms, cdm_tracks = conjunction_screening(primary_space_object, secondary_space_objects, primary_satrec, secondary_satrecs, start_time=datetime.datetime.now(tz=timezone.utc), screen_interval=4*24)
+    cdms, cdm_tracks = conjunction_screening(primary_space_object, secondary_space_objects, primary_satrec, secondary_satrecs, start_time=datetime.now(tz=timezone.utc), screen_interval=4*24)
 
     from pprint import pprint
     for cdm in cdms:

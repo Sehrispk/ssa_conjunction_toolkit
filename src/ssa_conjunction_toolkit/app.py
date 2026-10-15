@@ -1,11 +1,11 @@
 from flask import Flask, Response, jsonify, request
 from pathlib import Path
-from orbit_data_query import query
-from propagation import generate_ephemeris_array
+from .orbit_data_query import query
+from .propagation import generate_ephemeris_array
 import datetime
 from datetime import timezone
 from sgp4.api import SatrecArray
-from util import TEME_2_ICRF, generate_czml_trajectory_packets
+from .util import TEME_2_ICRF, generate_czml_trajectory_packets
 import czml3
 import requests
 
